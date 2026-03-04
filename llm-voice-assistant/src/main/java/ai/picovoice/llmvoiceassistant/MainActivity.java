@@ -79,7 +79,7 @@ public class MainActivity extends AppCompatActivity {
         LLM_TTS
     }
 
-    private static final String ACCESS_KEY = "+WtYH7btYfe1ojAhRQJ22zi1TvUTbSoi7wRYf0t1QoqMPHKLICn4sA==";
+    private static final String ACCESS_KEY = BuildConfig.PICOVOICE_ACCESS_KEY;
 
     private static final String STT_MODEL_FILE = "cheetah_params.pv";
 
