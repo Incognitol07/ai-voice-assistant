@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand -->
+    <color name="colorPrimary">#377DFF</color>
+    <color name="colorPrimaryDark">#1A56D6</color>
+    <color name="colorDanger">#FF4D4D</color>
+
+    <!-- Backgrounds -->
+    <color name="colorBackground">#0D0F14</color>
+    <color name="colorSurface">#161922</color>
+
+    <!-- Dividers -->
+    <color name="colorDivider">#1F2333</color>
+
+    <!-- Legacy / drawables -->
+    <color name="colorSecondary">#76838e</color>
+
+    <!-- Text -->
+    <color name="textPrimary">#E8ECF4</color>
+    <color name="textSecondary">#5C677D</color>
+    <color name="textOnBubble">#FFFFFF</color>
+
+    <!-- Chat bubbles -->
+    <color name="bubbleUser">#377DFF</color>
+    <color name="bubbleAssistant">#1C2033</color>
+</resources>

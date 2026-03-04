@@ -1,0 +1,215 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/rootLayout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/colorBackground">
+
+    <!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+         SCREEN 1 â€” Load model
+         â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/loadModelLayout"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="visible">
+
+        <!-- Guideline pins the icon group to 38% down the screen -->
+        <androidx.constraintlayout.widget.Guideline
+            android:id="@+id/loadIconGuideline"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            app:layout_constraintGuide_percent="0.38"/>
+
+        <!-- Decorative pulsing icon acts as the app's visual identity -->
+        <ai.picovoice.llmvoiceassistant.VoiceStateView
+            android:id="@+id/loadScreenIcon"
+            android:layout_width="120dp"
+            android:layout_height="120dp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintBottom_toTopOf="@+id/loadIconGuideline"/>
+
+        <TextView
+            android:id="@+id/loadModelTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/app_name"
+            android:textColor="@color/textPrimary"
+            android:textSize="26sp"
+            android:textStyle="bold"
+            android:layout_marginTop="20dp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/loadScreenIcon"
+            app:layout_constraintBottom_toTopOf="@+id/loadModelText"/>
+
+        <TextView
+            android:id="@+id/loadModelText"
+            android:text="@string/intro_text"
+            android:textColor="@color/textSecondary"
+            android:textSize="14sp"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:textAlignment="center"
+            android:paddingStart="40dp"
+            android:paddingEnd="40dp"
+            android:layout_marginTop="10dp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/loadModelTitle"/>
+
+        <!-- Spinner appears above CTA while loading each engine -->
+        <ProgressBar
+            android:id="@+id/loadModelProgress"
+            android:visibility="gone"
+            android:indeterminateTint="@color/colorPrimary"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_marginBottom="12dp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintBottom_toTopOf="@+id/loadModelButton"/>
+
+        <!-- Full-width CTA anchored to the bottom â€” thumb-friendly -->
+        <Button
+            android:id="@+id/loadModelButton"
+            android:background="@drawable/button_background"
+            android:textColor="@color/textOnBubble"
+            android:text="Select Model File"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:layout_width="0dp"
+            android:layout_height="52dp"
+            android:layout_marginStart="24dp"
+            android:layout_marginEnd="24dp"
+            android:layout_marginBottom="36dp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"/>
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+         SCREEN 2 â€” Conversation
+         â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/chatLayout"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="invisible">
+
+        <!-- Top app bar: back | title | clear â€” proper placement, not inside scroll -->
+        <LinearLayout
+            android:id="@+id/topBar"
+            android:layout_width="0dp"
+            android:layout_height="56dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@color/colorSurface"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent">
+
+            <ImageButton
+                android:id="@+id/loadNewModelButton"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/arrow_back_button"
+                android:padding="10dp"
+                android:contentDescription="Load new model"/>
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/app_name"
+                android:textColor="@color/textPrimary"
+                android:textSize="17sp"
+                android:textStyle="bold"
+                android:textAlignment="center"/>
+
+            <ImageButton
+                android:id="@+id/clearButton"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/clear_button_disabled"
+                android:padding="10dp"
+                android:contentDescription="Clear conversation"/>
+
+        </LinearLayout>
+
+        <!-- 1px rule under the top bar -->
+        <View
+            android:id="@+id/topBarDivider"
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:background="@color/colorDivider"
+            app:layout_constraintTop_toBottomOf="@+id/topBar"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+
+        <!-- Message list â€” flex space between top bar and status area -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/chatRecyclerView"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:paddingTop="12dp"
+            android:paddingBottom="12dp"
+            android:clipToPadding="false"
+            android:scrollbars="none"
+            app:layout_constraintTop_toBottomOf="@+id/topBarDivider"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintBottom_toTopOf="@+id/statusDivider"/>
+
+        <!-- 1px rule above status area -->
+        <View
+            android:id="@+id/statusDivider"
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:background="@color/colorDivider"
+            app:layout_constraintBottom_toTopOf="@+id/statusContainer"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+
+        <!-- Bottom status bar: animated indicator + state label -->
+        <LinearLayout
+            android:id="@+id/statusContainer"
+            android:layout_width="0dp"
+            android:layout_height="130dp"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="@color/colorSurface"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent">
+
+            <ai.picovoice.llmvoiceassistant.VoiceStateView
+                android:id="@+id/voiceStateView"
+                android:layout_width="120dp"
+                android:layout_height="64dp"/>
+
+            <TextView
+                android:id="@+id/statusText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Say &#8216;Picovoice&#8217;"
+                android:textColor="@color/textSecondary"
+                android:textSize="11sp"
+                android:textAllCaps="true"
+                android:letterSpacing="0.08"
+                android:layout_marginTop="6dp"/>
+
+        </LinearLayout>
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+</FrameLayout>
