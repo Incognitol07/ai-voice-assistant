@@ -23,17 +23,11 @@ import android.view.animation.DecelerateInterpolator;
 import android.view.animation.LinearInterpolator;
 
 /**
- * A stateful animated indicator that communicates the assistant's current mode
- * through three distinct visualizations:
+ * Animated indicator showing the assistant's current mode:
  *
- *   WAKE_WORD  — two concentric rings slowly expand and fade from a center dot,
- *                suggesting passive, ambient listening (radar / sonar metaphor).
- *
- *   STT        — five vertical bars animate up and down like an audio spectrum,
- *                signalling active microphone capture.
- *
- *   LLM_TTS    — a 270° arc spins continuously, indicating that the assistant
- *                is generating and speaking a response.
+ *   WAKE_WORD - two rings expand and fade from a center dot (passive listening)
+ *   STT       - five vertical bars animate like an audio spectrum (active capture)
+ *   LLM_TTS   - a 270-degree arc spins continuously (generating/speaking)
  */
 public class VoiceStateView extends View {
 
@@ -72,9 +66,9 @@ public class VoiceStateView extends View {
     private State currentState = State.WAKE_WORD;
 
     // Animated scalars fed by ValueAnimators
-    private float pulseProgress = 0f;   // 0..1 — overall pulse cycle position
-    private float barPhase      = 0f;   // 0..2π — drives bar heights via sin()
-    private float arcAngle      = 0f;   // 0..360 — start angle for rotating arc
+    private float pulseProgress = 0f;   // 0..1, pulse cycle position
+    private float barPhase      = 0f;   // 0..2*PI, drives bar heights via sin()
+    private float arcAngle      = 0f;   // 0..360, start angle for rotating arc
 
     // -----------------------------------------------------------------------
     // Paint objects (created once, reused)
@@ -213,8 +207,8 @@ public class VoiceStateView extends View {
     }
 
     /**
-     * WAKE_WORD — two staggered rings expand outward and fade, anchored to a
-     * solid center dot. Calm, ambient; the dot signals "I'm here but quiet."
+     * WAKE_WORD: two rings expand and fade from a center dot.
+     * Calm, ambient; the dot signals "I'm here but quiet."
      */
     private void drawPulseRings(Canvas canvas, float cx, float cy) {
         final float maxR    = Math.min(cx, cy) * 0.85f;
@@ -235,9 +229,8 @@ public class VoiceStateView extends View {
     }
 
     /**
-     * STT — five bars whose heights are driven by offset sin waves, producing
-     * a rolling "audio spectrum" effect. Height is clamped to a minimum so
-     * bars are always visible (avoiding a confusing flat line).
+     * STT: five bars driven by offset sin waves, producing an "audio spectrum" effect.
+     * Height clamped to a minimum so bars are always visible.
      */
     private void drawEqualiserBars(Canvas canvas, float cx, float cy) {
         final float maxBarH = Math.min(cx, cy) * 1.1f;
@@ -263,8 +256,7 @@ public class VoiceStateView extends View {
     }
 
     /**
-     * LLM_TTS — a 270° arc rotates continuously. The gap in the arc produces
-     * comfortable motion cues without being distractingly busy.
+     * LLM_TTS: a 270-degree arc rotates. The gap keeps the motion readable without being busy.
      */
     private void drawRotatingArc(Canvas canvas, float cx, float cy) {
         final float radius = Math.min(cx, cy) * 0.62f;

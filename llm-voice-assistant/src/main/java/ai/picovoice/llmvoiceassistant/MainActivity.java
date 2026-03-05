@@ -18,7 +18,6 @@ import android.content.pm.PackageManager;
 import android.media.AudioAttributes;
 import android.media.AudioFormat;
 import android.media.AudioTrack;
-import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -29,9 +28,6 @@ import android.widget.ImageButton;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
-import androidx.activity.result.ActivityResultCallback;
-import androidx.activity.result.ActivityResultLauncher;
-import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.constraintlayout.widget.ConstraintLayout;
@@ -41,12 +37,9 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.recyclerview.widget.SimpleItemAnimator;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -61,13 +54,26 @@ import ai.picovoice.cheetah.CheetahTranscript;
 import ai.picovoice.orca.Orca;
 import ai.picovoice.orca.OrcaException;
 import ai.picovoice.orca.OrcaSynthesizeParams;
-import ai.picovoice.picollm.PicoLLM;
-import ai.picovoice.picollm.PicoLLMCompletion;
-import ai.picovoice.picollm.PicoLLMDialog;
-import ai.picovoice.picollm.PicoLLMException;
-import ai.picovoice.picollm.PicoLLMGenerateParams;
 import ai.picovoice.porcupine.Porcupine;
 import ai.picovoice.porcupine.PorcupineException;
+
+import com.azure.ai.inference.ChatCompletionsClient;
+import com.azure.ai.inference.ChatCompletionsClientBuilder;
+import com.azure.ai.inference.models.ChatCompletionsOptions;
+import com.azure.ai.inference.models.ChatRequestAssistantMessage;
+import com.azure.ai.inference.models.ChatRequestMessage;
+import com.azure.ai.inference.models.ChatRequestSystemMessage;
+import com.azure.ai.inference.models.ChatRequestUserMessage;
+import com.azure.ai.inference.models.StreamingChatCompletionsUpdate;
+import com.azure.ai.inference.models.StreamingChatResponseMessageUpdate;
+import com.azure.core.credential.AccessToken;
+import com.azure.core.credential.TokenCredential;
+import com.azure.core.util.CoreUtils;
+import com.azure.core.util.IterableStream;
+
+import java.time.OffsetDateTime;
+
+import reactor.core.publisher.Mono;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -81,34 +87,36 @@ public class MainActivity extends AppCompatActivity {
 
     private static final String ACCESS_KEY = BuildConfig.PICOVOICE_ACCESS_KEY;
 
+    private static final String GITHUB_TOKEN = BuildConfig.GITHUB_TOKEN;
+
+    private static final String OPENAI_ENDPOINT = "https://models.github.ai/inference";
+
+    private static final String OPENAI_MODEL = "openai/gpt-4o";
+
     private static final String STT_MODEL_FILE = "cheetah_params.pv";
 
     private static final String TTS_MODEL_FILE = "orca_params_female.pv";
 
-    private static final String SYSTEM_PROMPT = null;
-
-    private static final int COMPLETION_TOKEN_LIMIT = 128;
+    private static final String SYSTEM_PROMPT = "You are a voice assistant. Follow these rules strictly: "
+            + "1. Keep all responses under 3 sentences unless the user explicitly asks for more detail. "
+            + "2. Never use markdown, bullet points, numbered lists, or special characters — your response will be spoken aloud. "
+            + "3. Speak naturally and conversationally, as if talking to a person. "
+            + "4. If you don't know something, say so briefly. Never make up facts. "
+            + "5. For simple questions, give a single direct sentence.";
 
     private static final int TTS_WARMUP_SECONDS = 1;
-
-    private static final String[] STOP_PHRASES = new String[]{
-            "</s>",             // Llama-2, Mistral, and Mixtral
-            "<end_of_turn>",    // Gemma
-            "<|endoftext|>",    // Phi-2
-            "<|eot_id|>",       // Llama-3
-            "<|end|>", "<|user|>", "<|assistant|>", // Phi-3
-    };
 
     private final VoiceProcessor voiceProcessor = VoiceProcessor.getInstance();
 
     private Porcupine porcupine;
     private Cheetah cheetah;
-    private PicoLLM picollm;
+    private ChatCompletionsClient chatClient;
     private Orca orca;
 
-    private PicoLLMDialog dialog;
+    private List<ChatRequestMessage> conversationHistory = new ArrayList<>();
 
-    private PicoLLMCompletion finalCompletion;
+    private final AtomicBoolean interruptLLM = new AtomicBoolean(false);
+    private final AtomicBoolean wasInterrupted = new AtomicBoolean(false);
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -116,11 +124,9 @@ public class MainActivity extends AppCompatActivity {
     private final ExecutorService ttsSynthesizeExecutor = Executors.newSingleThreadExecutor();
     private final ExecutorService ttsPlaybackExecutor = Executors.newSingleThreadExecutor();
 
-    // Accumulates LLM tokens between UI frames so we post to the main thread at
-    // most once per ~16 ms (one vsync) rather than once per token. Decouples
-    // inference throughput from render rate and reduces thread-scheduler pressure.
+    // batches tokens so main thread is posted at most once per frame (~16ms)
     private final StringBuilder pendingTokenBuffer = new StringBuilder();
-    private Runnable flushPendingTokens;  // initialized in onCreate after messageAdapter
+    private Runnable flushPendingTokens;  // set up in onCreate, after messageAdapter exists
 
     private AudioTrack ttsOutput;
 
@@ -160,7 +166,8 @@ public class MainActivity extends AppCompatActivity {
         loadModelButton = findViewById(R.id.loadModelButton);
 
         loadModelButton.setOnClickListener(view -> {
-            modelSelection.launch(new String[]{"application/octet-stream"});
+            updateUIState(UIState.LOADING_MODEL);
+            engineExecutor.submit(() -> initEngines());
         });
 
         updateUIState(UIState.INIT);
@@ -182,9 +189,7 @@ public class MainActivity extends AppCompatActivity {
         layoutManager.setStackFromEnd(true);
         chatRecyclerView.setLayoutManager(layoutManager);
         chatRecyclerView.setAdapter(messageAdapter);
-        // Disable the default cross-fade animation on item updates. Without this
-        // every notifyItemChanged call (i.e. every streamed token) triggers a
-        // brief fade-out/fade-in on the bubble, producing the jarring flicker.
+        // cross-fade on item updates causes flicker when streaming tokens
         ((SimpleItemAnimator) chatRecyclerView.getItemAnimator())
                 .setSupportsChangeAnimations(false);
 
@@ -193,26 +198,18 @@ public class MainActivity extends AppCompatActivity {
 
         loadNewModelButton = findViewById(R.id.loadNewModelButton);
         loadNewModelButton.setOnClickListener(view -> {
-            if (picollm != null) {
-                picollm.delete();
-                picollm = null;
-            }
+            conversationHistory.clear();
             updateUIState(UIState.INIT);
             mainHandler.post(() -> messageAdapter.clear());
         });
 
         clearTextButton = findViewById(R.id.clearButton);
         clearTextButton.setOnClickListener(view -> {
-            // Submit the dialog reset to the engine executor so it is serialized
-            // with any in-flight addHumanRequest / addLLMResponse calls, eliminating
-            // the race between the main thread and the inference thread.
+            // run on the engine thread so it doesn't race with an in-flight response
             engineExecutor.submit(() -> {
-                try {
-                    dialog = picollm.getDialogBuilder().setSystem(SYSTEM_PROMPT).build();
-                } catch (PicoLLMException e) {
-                    updateUIState(UIState.WAKE_WORD);
-                    mainHandler.post(() -> messageAdapter.addMessage(
-                            new Message(Message.Role.ASSISTANT, e.toString())));
+                conversationHistory.clear();
+                if (SYSTEM_PROMPT != null) {
+                    conversationHistory.add(new ChatRequestSystemMessage(SYSTEM_PROMPT));
                 }
             });
             mainHandler.post(() -> {
@@ -226,34 +223,7 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    ActivityResultLauncher<String[]> modelSelection = registerForActivityResult(
-            new ActivityResultContracts.OpenDocument(),
-            new ActivityResultCallback<Uri>() {
-                @SuppressLint("SetTextI18n")
-                @Override
-                public void onActivityResult(Uri selectedUri) {
-                    updateUIState(UIState.LOADING_MODEL);
-
-                    if (selectedUri == null) {
-                        updateUIState(UIState.INIT);
-                        mainHandler.post(() -> loadModelText.setText("No file selected"));
-                        return;
-                    }
-
-                    engineExecutor.submit(() -> {
-                        File llmModelFile = extractModelFile(selectedUri);
-                        if (llmModelFile == null || !llmModelFile.exists()) {
-                            updateUIState(UIState.INIT);
-                            mainHandler.post(() -> loadModelText.setText("Unable to access selected file"));
-                            return;
-                        }
-
-                        initEngines(llmModelFile);
-                    });
-                }
-            });
-
-    private void initEngines(File modelFile) {
+    private void initEngines() {
         mainHandler.post(() -> loadModelText.setText("Loading Porcupine..."));
         try {
             porcupine = new Porcupine.Builder()
@@ -277,16 +247,17 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        mainHandler.post(() -> loadModelText.setText("Loading picoLLM..."));
-        try {
-            picollm = new PicoLLM.Builder()
-                    .setAccessKey(ACCESS_KEY)
-                    .setModelPath(modelFile.getAbsolutePath())
-                    .build();
-            dialog = picollm.getDialogBuilder().setSystem(SYSTEM_PROMPT).build();
-        } catch (PicoLLMException e) {
-            onEngineInitError(e.getMessage());
-            return;
+        mainHandler.post(() -> loadModelText.setText("Initializing cloud LLM client..."));
+        TokenCredential bearerCredential =
+                tokenRequestContext -> Mono.just(
+                        new AccessToken(GITHUB_TOKEN, OffsetDateTime.now().plusYears(1)));
+        chatClient = new ChatCompletionsClientBuilder()
+                .credential(bearerCredential)
+                .endpoint(OPENAI_ENDPOINT)
+                .buildClient();
+        conversationHistory.clear();
+        if (SYSTEM_PROMPT != null) {
+            conversationHistory.add(new ChatRequestSystemMessage(SYSTEM_PROMPT));
         }
 
         mainHandler.post(() -> loadModelText.setText("Loading Orca..."));
@@ -373,54 +344,54 @@ public class MainActivity extends AppCompatActivity {
 
         updateUIState(UIState.LLM_TTS);
 
-        finalCompletion = null;
-
         mainHandler.post(() -> messageAdapter.addMessage(new Message(Message.Role.ASSISTANT, "")));
 
         engineExecutor.submit(() -> {
-            TPSProfiler picoLLMProfiler = new TPSProfiler();
             try {
                 isQueueingTokens.set(true);
+                interruptLLM.set(false);
+                wasInterrupted.set(false);
 
-                dialog.addHumanRequest(prompt);
-                finalCompletion = picollm.generate(
-                        dialog.getPrompt(),
-                        new PicoLLMGenerateParams.Builder()
-                                .setStreamCallback(token -> {
-                                    picoLLMProfiler.tock();
-                                    if (token != null && token.length() > 0) {
-                                        boolean containsStopPhrase = false;
-                                        for (String k : STOP_PHRASES) {
-                                            if (token.contains(k)) {
-                                                containsStopPhrase = true;
-                                                break;
-                                            }
-                                        }
+                conversationHistory.add(new ChatRequestUserMessage(prompt));
+                ChatCompletionsOptions opts = new ChatCompletionsOptions(
+                        new ArrayList<>(conversationHistory));
+                opts.setModel(OPENAI_MODEL);
 
-                                        if (!containsStopPhrase && currentState == UIState.LLM_TTS) {
-                                            tokenQueue.add(token);
-                                            tokensReadyLatch.countDown();
+                IterableStream<StreamingChatCompletionsUpdate> stream =
+                        chatClient.completeStream(opts);
 
-                                            // Batch: accumulate token, schedule a single
-                                            // UI flush no more than once per frame (~16ms).
-                                            synchronized (pendingTokenBuffer) {
-                                                pendingTokenBuffer.append(token);
-                                            }
-                                            mainHandler.removeCallbacks(flushPendingTokens);
-                                            mainHandler.postDelayed(flushPendingTokens, 16);
-                                        }
-                                    }
-                                })
-                                .setCompletionTokenLimit(COMPLETION_TOKEN_LIMIT)
-                                .setStopPhrases(STOP_PHRASES)
-                                .build());
-                dialog.addLLMResponse(finalCompletion.getCompletion());
-                Log.i("PICOVOICE", String.format("TPS: %.2f", picoLLMProfiler.tps()));
+                StringBuilder fullResponse = new StringBuilder();
+                for (StreamingChatCompletionsUpdate update : stream) {
+                    if (interruptLLM.get()) {
+                        wasInterrupted.set(true);
+                        break;
+                    }
+                    if (CoreUtils.isNullOrEmpty(update.getChoices())) {
+                        continue;
+                    }
+                    StreamingChatResponseMessageUpdate delta = update.getChoices().get(0).getDelta();
+                    if (delta != null && delta.getContent() != null) {
+                        String token = delta.getContent();
+                        if (token.length() > 0 && currentState == UIState.LLM_TTS) {
+                            tokenQueue.add(token);
+                            tokensReadyLatch.countDown();
+                            fullResponse.append(token);
+
+                            // cap UI posts to one per frame
+                            synchronized (pendingTokenBuffer) {
+                                pendingTokenBuffer.append(token);
+                            }
+                            mainHandler.removeCallbacks(flushPendingTokens);
+                            mainHandler.postDelayed(flushPendingTokens, 16);
+                        }
+                    }
+                }
+
+                conversationHistory.add(new ChatRequestAssistantMessage(fullResponse.toString()));
 
                 isQueueingTokens.set(false);
 
-                // Flush any tokens that accumulated in the batch buffer during
-                // the last 16ms window — ensures the final words always appear.
+                // make sure the last batch of tokens always reaches the screen
                 mainHandler.removeCallbacks(flushPendingTokens);
                 mainHandler.post(flushPendingTokens);
 
@@ -431,10 +402,9 @@ public class MainActivity extends AppCompatActivity {
                                     R.drawable.clear_button,
                                     null));
                 });
-                // State transition intentionally deferred to ttsPlaybackExecutor
-                // so the animation persists until the last audio sample plays.
+                // state change is left to ttsPlaybackExecutor so audio finishes first
 
-            } catch (PicoLLMException e) {
+            } catch (Exception e) {
                 onEngineProcessError(e.getMessage());
             }
         });
@@ -491,8 +461,7 @@ public class MainActivity extends AppCompatActivity {
                         return;
                     }
                 } else {
-                    // Queue is momentarily empty while the LLM is still generating.
-                    // Yield the CPU for 1 ms so the inference thread isn't starved.
+                    // LLM still running, yield so we don't spin-wait
                     try { Thread.sleep(1); } catch (InterruptedException ignored) {}
                 }
             }
@@ -541,8 +510,7 @@ public class MainActivity extends AppCompatActivity {
                 ttsOutput = new AudioTrack(
                         audioAttributes,
                         audioFormat,
-                        // 4× the minimum avoids underruns and reduces the frequency
-                        // at which the OS must wake up the playback thread.
+                        // larger buffer = fewer underruns
                         AudioTrack.getMinBufferSize(
                                 orca.getSampleRate(),
                                 AudioFormat.CHANNEL_OUT_MONO,
@@ -576,9 +544,7 @@ public class MainActivity extends AppCompatActivity {
             }
             ttsOutput.release();
 
-            // Transition only after the last audio sample has been played.
-            if (finalCompletion != null
-                    && finalCompletion.getEndpoint() == PicoLLMCompletion.Endpoint.INTERRUPTED) {
+            if (wasInterrupted.get()) {
                 llmPromptText = new StringBuilder();
                 updateUIState(UIState.STT);
             } else {
@@ -588,31 +554,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void interrupt() {
-        try {
-            picollm.interrupt();
-            if (ttsOutput != null && ttsOutput.getPlayState() == AudioTrack.PLAYSTATE_PLAYING) {
-                ttsOutput.stop();
-            }
-        } catch (PicoLLMException e) {
-            onEngineProcessError(e.getMessage());
+        interruptLLM.set(true);
+        if (ttsOutput != null && ttsOutput.getPlayState() == AudioTrack.PLAYSTATE_PLAYING) {
+            ttsOutput.stop();
         }
-    }
-
-    private File extractModelFile(Uri uri) {
-        File modelFile = new File(getApplicationContext().getFilesDir(), "model.pllm");
-
-        try (InputStream is = getContentResolver().openInputStream(uri);
-                OutputStream os = new FileOutputStream(modelFile)) {
-            byte[] buffer = new byte[8192];
-            int numBytesRead;
-            while ((numBytesRead = is.read(buffer)) != -1) {
-                os.write(buffer, 0, numBytesRead);
-            }
-        } catch (IOException e) {
-            return null;
-        }
-
-        return modelFile;
     }
 
     private void onEngineInitError(String message) {
@@ -783,11 +728,6 @@ public class MainActivity extends AppCompatActivity {
         if (cheetah != null) {
             cheetah.delete();
             cheetah = null;
-        }
-
-        if (picollm != null) {
-            picollm.delete();
-            picollm = null;
         }
 
         if (orca != null) {

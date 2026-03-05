@@ -10,8 +10,8 @@ package ai.picovoice.llmvoiceassistant;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * A single turn in the conversation — either a user utterance or an assistant response.
- * The text is mutable so that streaming LLM tokens can be appended without creating new objects.
+ * A single turn in the conversation: user utterance or assistant response.
+ * Text is mutable so streaming tokens can be appended without new object allocations.
  */
 public class Message {
 

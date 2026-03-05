@@ -22,13 +22,14 @@ android {
     compileSdk defaultTargetSdkVersion
     defaultConfig {
         applicationId "ai.picovoice.llmvoiceassistant"
-        minSdkVersion 21
+        minSdkVersion 26
         targetSdkVersion defaultTargetSdkVersion
         versionCode 1
         versionName "1.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField "String", "PICOVOICE_ACCESS_KEY", "\"${properties.getProperty('PICOVOICE_ACCESS_KEY', '')}\""
+        buildConfigField "String", "GITHUB_TOKEN", "\"${properties.getProperty('GITHUB_TOKEN', '')}\""
     }
     buildFeatures {
         buildConfig true
@@ -58,6 +59,25 @@ android {
     lint {
         abortOnError false
     }
+    packaging {
+        resources {
+            excludes += [
+                'META-INF/INDEX.LIST',
+                'META-INF/*.SF',
+                'META-INF/*.DSA',
+                'META-INF/*.RSA',
+                'META-INF/DEPENDENCIES',
+                'META-INF/LICENSE',
+                'META-INF/LICENSE.txt',
+                'META-INF/NOTICE',
+                'META-INF/NOTICE.txt',
+                'META-INF/io.netty.versions.properties',
+                'META-INF/LICENSE.md',
+                'META-INF/NOTICE.md',
+                'META-INF/LICENSE-notice.md'
+            ]
+        }
+    }
     namespace 'ai.picovoice.llmvoiceassistant'
 }
 
@@ -70,6 +90,6 @@ dependencies {
     implementation 'ai.picovoice:android-voice-processor:1.0.2'
     implementation 'ai.picovoice:porcupine-android:4.0.0'
     implementation 'ai.picovoice:cheetah-android:3.0.0'
-    implementation 'ai.picovoice:picollm-android:2.0.0'
+    implementation 'com.azure:azure-ai-inference:1.0.0-beta.1'
     implementation 'ai.picovoice:orca-android:2.0.0'
 }
