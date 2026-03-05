@@ -1,69 +1,78 @@
-## See It In Action!
+# LLM Voice Assistant - Android
 
 [![LLM VA in Action](https://img.youtube.com/vi/5JkDVbkedBU/0.jpg)](https://www.youtube.com/watch?v=5JkDVbkedBU)
 
-## Compatibility
+Wake-word triggered voice assistant. Say "Picovoice", ask something, get a spoken answer.
 
-- Android 5.0 (SDK 21+)
+**Stack:**
 
-## AccessKey
+- Wake word: Porcupine
+- Speech-to-text: Cheetah
+- LLM: GPT-4o via GitHub Models (cloud)
+- Text-to-speech: Orca
 
-AccessKey is your authentication and authorization token for deploying Picovoice SDKs, including picoLLM. Anyone who is
-using Picovoice needs to have a valid AccessKey. You must keep your AccessKey secret. You would need internet
-connectivity to validate your AccessKey with Picovoice license servers even though the LLM inference is running 100%
-offline and completely free for open-weight models. Everyone who signs up for
-[Picovoice Console](https://console.picovoice.ai/) receives a unique AccessKey.
+---
 
-## picoLLM Model
+## Requirements
 
-picoLLM Inference Engine supports a variety of open-weight models. The models can be downloaded from the [Picovoice Console](https://console.picovoice.ai/).
+- Android SDK 26+
+- A [Picovoice Console](https://console.picovoice.ai/) account (free) → grab your AccessKey
+- A GitHub personal access token with `models:read` scope (for GitHub Models API)
 
-Download your desired model file (`.pllm`) from the Picovoice Console. If you do not download the
-file directly from your Android device, you will need to upload it to the device.
-To upload the model to the device, use the Android Studio Device Explorer or `adb push`:
-```console
-adb push ~/model.pllm /sdcard/Downloads/
+---
+
+## Setup
+
+**1. Add your keys to `local.properties`** (never commit this file):
+
+```properties
+PICOVOICE_ACCESS_KEY=your-key-here
+GITHUB_TOKEN=your-github-pat-here
 ```
+
+Both are read by Gradle at build time and baked into `BuildConfig`, no hardcoding needed.
+
+**2. Drop the model files into `llm-voice-assistant/src/main/assets/`:**
+
+| File | Where to get it |
+|---|---|
+| `cheetah_params.pv` | [Picovoice Console](https://console.picovoice.ai/) → Cheetah |
+| `orca_params_female.pv` | [Picovoice Console](https://console.picovoice.ai/) → Orca |
+
+**3. Build and run** - open the project in Android Studio, connect a device, hit Run.
+
+---
 
 ## Usage
 
-1. Open the `LLMVoiceAssistant` project in Android Studio.
-2. Copy your `AccessKey` from Picovoice Console into the `ACCESS_KEY` variable in [MainActivity.java](llm-voice-assistant/src/main/java/ai/picovoice/llmvoiceassistant/MainActivity.java).
-3. Connect a device or launch an Android simulator.
-4. Build and run the demo.
-5. Press the `Load Model` button and select the model file (`.pllm`) from your device's storage.
-6. Say "Picovoice", then you'll be able to prompt the voice assistant.
+1. Tap **Start** - initialises Porcupine, Cheetah, Orca, and connects the GitHub Models client.
+2. Say **"Picovoice"** to trigger STT.
+3. Ask your question. Cheetah detects end-of-speech automatically.
+4. The assistant responds in text and audio. Say "Picovoice" again mid-response to interrupt.
+5. **Clear** resets the conversation history. **Back arrow** returns to the load screen.
+
+---
 
 ## Custom Wake Word
 
-The demo's default wake phrase is `Picovoice`. You can generate your custom (branded) wake word using
-Picovoice Console by following [Porcupine Wake Word documentation (https://picovoice.ai/docs/porcupine/).
-Once you have the model trained, add it to your project by following these steps:
+Default wake phrase is `Picovoice`. To use your own:
 
-1. Download the custom wake word file (`.ppn`)
-2. Add it to the `${ANDROID_APP}/src/main/assets` directory of your Android project
-3. Create an instance of Porcupine using the .setKeywordPaths builder method and the keyword path (relative to the assets directory or absolute path to the file on device):
+1. Train a custom wake word on [Picovoice Console](https://console.picovoice.ai/) → Porcupine.
+2. Download the `.ppn` file and put it in `src/main/assets/`.
+3. Swap the builder call in `MainActivity.java`:
 
 ```java
 porcupine = new Porcupine.Builder()
-        .setAccessKey("${ACCESS_KEY}")
-        .setKeywordPath("${KEYWORD_FILE_PATH}")
+        .setAccessKey(ACCESS_KEY)
+        .setKeywordPath("your_wake_word.ppn")
         .build(getApplicationContext());
 ```
 
+---
+
 ## Profiling
 
-Profiling data is automatically printed in the app's `logcat`.
+Check `logcat` (tag `PICOVOICE`) after a response. Two metrics are logged:
 
-### Real-time Factor (RTF)
-
-RTF is a standard metric for measuring the speed of speech processing (e.g., wake word, speech-to-text, and
-text-to-speech). RTF is the CPU time divided by the processed (recognized or synthesized) audio length.
-Hence, a lower RTF means a more efficient engine.
-
-### Token per Second (TPS)
-
-Token per second is the standard metric for measuring the speed of LLM inference engines. TPS is the number of
-generated tokens divided by the compute time used to create them. A higher TPS is better.
-
-
+- **RTF (Real-time Factor)** - compute time / audio length. Lower is better. Below 1.0 means faster than real-time.
+- **TPS (Tokens per Second)** - LLM output speed. Higher is better.
