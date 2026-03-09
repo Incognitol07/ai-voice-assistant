@@ -92,4 +92,5 @@ dependencies {
     implementation 'ai.picovoice:cheetah-android:3.0.0'
     implementation 'com.azure:azure-ai-inference:1.0.0-beta.1'
     implementation 'ai.picovoice:orca-android:2.0.0'
+    implementation 'ai.picovoice:picollm-android:2.0.0'
 }

@@ -72,14 +72,31 @@
             android:layout_marginBottom="12dp"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintBottom_toTopOf="@+id/cloudModelButton"/>
+
+        <!-- Cloud LLM option -->
+        <Button
+            android:id="@+id/cloudModelButton"
+            android:background="@drawable/button_background"
+            android:textColor="@color/textOnBubble"
+            android:text="Cloud (GitHub Model)"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:layout_width="0dp"
+            android:layout_height="52dp"
+            android:layout_marginStart="24dp"
+            android:layout_marginEnd="24dp"
+            android:layout_marginBottom="12dp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintBottom_toTopOf="@+id/loadModelButton"/>
 
-        <!-- Full-width CTA anchored to the bottom â€” thumb-friendly -->
+        <!-- On-device .pllm option anchored to the bottom -->
         <Button
             android:id="@+id/loadModelButton"
             android:background="@drawable/button_background"
             android:textColor="@color/textOnBubble"
-            android:text="Start"
+            android:text="On-Device (.pllm)"
             android:textSize="16sp"
             android:textStyle="bold"
             android:layout_width="0dp"

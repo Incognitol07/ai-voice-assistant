@@ -1,4 +1,4 @@
 <resources>
     <string name="app_name">Voice Assistant</string>
-    <string name="intro_text">Select a .pllm model file from your device to begin talking.</string>
+    <string name="intro_text">Run the LLM on-device with a .pllm file, or use a cloud llm.</string>
 </resources>
