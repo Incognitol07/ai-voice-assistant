@@ -1,14 +1,18 @@
 ext {
-    defaultTargetSdkVersion = 33
+    defaultTargetSdkVersion = 34
 }
 
 buildscript {
+    ext {
+        kotlinVersion = '1.9.23'
+    }
     repositories {
         google()
         mavenCentral()
     }
     dependencies {
-        classpath "com.android.tools.build:gradle:8.1.2"
+        classpath 'com.android.tools.build:gradle:8.13.2'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion"
     }
 }
 
