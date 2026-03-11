@@ -41,8 +41,6 @@ import ai.picovoice.cheetah.CheetahException
 import ai.picovoice.orca.Orca
 import ai.picovoice.orca.OrcaException
 import ai.picovoice.orca.OrcaSynthesizeParams
-import ai.picovoice.porcupine.Porcupine
-import ai.picovoice.porcupine.PorcupineException
 import ai.picovoice.picollm.PicoLLM
 import ai.picovoice.picollm.PicoLLMCompletion
 import ai.picovoice.picollm.PicoLLMDialog
@@ -69,16 +67,23 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val voiceProcessor = VoiceProcessor.getInstance()
-
-    private var porcupine: Porcupine? = null
+    private var wakeWordEngine: WakeWordEngine? = null
     private var cheetah: Cheetah? = null
-    private var chatClient: ChatCompletionsClient? = null
-    private var picollm: PicoLLM? = null
-    private var dialog: PicoLLMDialog? = null
-    private var finalCompletion: PicoLLMCompletion? = null
+    private var chatClient: com.azure.ai.inference.ChatCompletionsClient? = null
+    private var picollm: ai.picovoice.picollm.PicoLLM? = null
+    private var dialog: ai.picovoice.picollm.PicoLLMDialog? = null
+    private var finalCompletion: ai.picovoice.picollm.PicoLLMCompletion? = null
     private var orca: Orca? = null
+    private val bearerCredential = com.azure.core.credential.TokenCredential { _ ->
+        com.azure.core.credential.AccessToken(GITHUB_TOKEN, OffsetDateTime.now().plusYears(1)).let { Mono.just(it) }
+    }
+
+    private enum class WakeWordProvider {
+        PICOVOICE, OPENWAKEWORD
+    }
 
     private var selectedMode = Mode.CLOUD
+    private var selectedWakeWordProvider = WakeWordProvider.PICOVOICE
     private val conversationHistory = ArrayList<ChatRequestMessage>()
 
     private val interruptLLM = AtomicBoolean(false)
@@ -98,10 +103,12 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var loadModelLayout: ConstraintLayout
     private lateinit var chatLayout: ConstraintLayout
-    private lateinit var loadModelButton: Button
-    private lateinit var cloudModelButton: Button
     private lateinit var loadModelText: TextView
     private lateinit var loadModelProgress: ProgressBar
+    private lateinit var intelligenceToggleGroup: com.google.android.material.button.MaterialButtonToggleGroup
+    private lateinit var wakeWordToggleGroup: com.google.android.material.button.MaterialButtonToggleGroup
+    private lateinit var startSessionButton: Button
+
     private lateinit var chatRecyclerView: RecyclerView
     private lateinit var messageAdapter: MessageAdapter
     private lateinit var statusText: TextView
@@ -137,20 +144,33 @@ class MainActivity : AppCompatActivity() {
         chatLayout = findViewById(R.id.chatLayout)
         loadModelText = findViewById(R.id.loadModelText)
         loadModelProgress = findViewById(R.id.loadModelProgress)
-        loadModelButton = findViewById(R.id.loadModelButton)
 
-        loadModelButton.setOnClickListener {
-            selectedMode = Mode.ON_DEVICE
-            modelSelection.launch(arrayOf("application/octet-stream"))
+        intelligenceToggleGroup = findViewById(R.id.intelligenceToggleGroup)
+        intelligenceToggleGroup.addOnButtonCheckedListener { _, checkedId, isChecked ->
+            if (isChecked) {
+                selectedMode = if (checkedId == R.id.cloudButton) Mode.CLOUD else Mode.ON_DEVICE
+                updateStartButtonText()
+            }
         }
 
-        cloudModelButton = findViewById(R.id.cloudModelButton)
-        cloudModelButton.setOnClickListener {
-            selectedMode = Mode.CLOUD
-            updateUIState(UIState.LOADING_MODEL)
-            engineExecutor.submit { initEnginesCloud() }
+        wakeWordToggleGroup = findViewById(R.id.wakeWordToggleGroup)
+        wakeWordToggleGroup.addOnButtonCheckedListener { _, checkedId, isChecked ->
+            if (isChecked) {
+                selectedWakeWordProvider = if (checkedId == R.id.picovoiceButton) WakeWordProvider.PICOVOICE else WakeWordProvider.OPENWAKEWORD
+            }
         }
 
+        startSessionButton = findViewById(R.id.startSessionButton)
+        startSessionButton.setOnClickListener {
+            if (selectedMode == Mode.ON_DEVICE) {
+                modelSelection.launch(arrayOf("application/octet-stream"))
+            } else {
+                updateUIState(UIState.LOADING_MODEL)
+                engineExecutor.submit { initEnginesCloud() }
+            }
+        }
+
+        updateStartButtonText()
         updateUIState(UIState.INIT)
 
         messageAdapter = MessageAdapter()
@@ -177,9 +197,7 @@ class MainActivity : AppCompatActivity() {
 
         loadNewModelButton = findViewById(R.id.loadNewModelButton)
         loadNewModelButton.setOnClickListener {
-            picollm?.delete()
-            picollm = null
-            conversationHistory.clear()
+            resetEngines()
             updateUIState(UIState.INIT)
             mainHandler.post { messageAdapter.clear() }
         }
@@ -211,16 +229,24 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun updateStartButtonText() {
+        startSessionButton.text = if (selectedMode == Mode.CLOUD) "Initialize Keva" else "Select .pllm & Start"
+    }
+
     private fun initEnginesCloud() {
-        mainHandler.post { loadModelText.text = "Loading Porcupine..." }
-        try {
-            porcupine = Porcupine.Builder()
-                .setAccessKey(ACCESS_KEY)
-                .setKeyword(Porcupine.BuiltInKeyword.PICOVOICE)
-                .build(applicationContext)
-        } catch (e: PorcupineException) {
-            onEngineInitError(e.message)
-            return
+        resetEngines()
+        
+        mainHandler.post { loadModelText.text = "Loading Wake Word Engine..." }
+        wakeWordEngine = when (selectedWakeWordProvider) {
+            WakeWordProvider.PICOVOICE -> PicovoiceWakeWordEngine(ACCESS_KEY)
+            WakeWordProvider.OPENWAKEWORD -> OpenWakeWordEngine()
+        }
+        wakeWordEngine?.start(applicationContext) { keywordIndex ->
+            if (keywordIndex == 0) {
+                interrupt()
+                llmPromptText = java.lang.StringBuilder()
+                updateUIState(UIState.STT)
+            }
         }
 
         mainHandler.post { loadModelText.text = "Loading Cheetah..." }
@@ -235,14 +261,13 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        mainHandler.post { loadModelText.text = "Initializing cloud LLM client..." }
-        val bearerCredential = com.azure.core.credential.TokenCredential { _ ->
-            Mono.just(AccessToken(GITHUB_TOKEN, OffsetDateTime.now().plusYears(1)))
+        if (chatClient == null) {
+            mainHandler.post { loadModelText.text = "Initializing cloud LLM client..." }
+            chatClient = ChatCompletionsClientBuilder()
+                .credential(bearerCredential)
+                .endpoint(OPENAI_ENDPOINT)
+                .buildClient()
         }
-        chatClient = ChatCompletionsClientBuilder()
-            .credential(bearerCredential)
-            .endpoint(OPENAI_ENDPOINT)
-            .buildClient()
         conversationHistory.clear()
         conversationHistory.add(ChatRequestSystemMessage(SYSTEM_PROMPT))
 
@@ -264,15 +289,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun initEnginesOnDevice(modelFile: File) {
-        mainHandler.post { loadModelText.text = "Loading Porcupine..." }
-        try {
-            porcupine = Porcupine.Builder()
-                .setAccessKey(ACCESS_KEY)
-                .setKeyword(Porcupine.BuiltInKeyword.PICOVOICE)
-                .build(applicationContext)
-        } catch (e: PorcupineException) {
-            onEngineInitError(e.message)
-            return
+        resetEngines()
+        
+        mainHandler.post { loadModelText.text = "Loading Wake Word Engine..." }
+        wakeWordEngine = when (selectedWakeWordProvider) {
+            WakeWordProvider.PICOVOICE -> PicovoiceWakeWordEngine(ACCESS_KEY)
+            WakeWordProvider.OPENWAKEWORD -> OpenWakeWordEngine()
+        }
+        wakeWordEngine?.start(applicationContext) { keywordIndex ->
+            if (keywordIndex == 0) {
+                interrupt()
+                llmPromptText = java.lang.StringBuilder()
+                updateUIState(UIState.STT)
+            }
         }
 
         mainHandler.post { loadModelText.text = "Loading Cheetah..." }
@@ -317,26 +346,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun runWakeWordSTT(frame: ShortArray) {
-        if (currentState == UIState.WAKE_WORD) {
-            try {
-                val keywordIndex = porcupine?.process(frame) ?: -1
-                if (keywordIndex == 0) {
-                    interrupt()
-                    llmPromptText = java.lang.StringBuilder()
-                    updateUIState(UIState.STT)
-                }
-            } catch (e: PorcupineException) {
-                onEngineProcessError(e.message)
-            }
-        } else if (currentState == UIState.LLM_TTS) {
-            try {
-                val keywordIndex = porcupine?.process(frame) ?: -1
-                if (keywordIndex == 0) {
-                    interrupt()
-                }
-            } catch (e: PorcupineException) {
-                onEngineProcessError(e.message)
-            }
+        if (currentState == UIState.WAKE_WORD || currentState == UIState.LLM_TTS) {
+            wakeWordEngine?.process(frame)
         } else if (currentState == UIState.STT) {
             try {
                 val result = cheetah?.process(frame) ?: return
@@ -632,6 +643,30 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun resetEngines() {
+        try {
+            voiceProcessor.stop()
+        } catch (e: VoiceProcessorException) {
+            Log.e("PICOVOICE", "Error stopping voice processor", e)
+        }
+        voiceProcessor.clearFrameListeners()
+        voiceProcessor.clearErrorListeners()
+
+        wakeWordEngine?.stop()
+        wakeWordEngine = null
+
+        cheetah?.delete()
+        cheetah = null
+
+        picollm?.delete()
+        picollm = null
+
+        orca?.delete()
+        orca = null
+        
+        conversationHistory.clear()
+    }
+
     private fun extractModelFile(uri: Uri): File? {
         val modelFile = File(applicationContext.filesDir, "model.pllm")
         try {
@@ -698,22 +733,22 @@ class MainActivity : AppCompatActivity() {
                 UIState.INIT -> {
                     loadModelLayout.visibility = View.VISIBLE
                     chatLayout.visibility = View.INVISIBLE
-                    loadModelButton.isEnabled = true
-                    loadModelButton.background = ResourcesCompat.getDrawable(resources, R.drawable.button_background, null)
-                    cloudModelButton.isEnabled = true
-                    cloudModelButton.background = ResourcesCompat.getDrawable(resources, R.drawable.button_background, null)
+                    startSessionButton.isEnabled = true
+                    startSessionButton.alpha = 1.0f
+                    intelligenceToggleGroup.isEnabled = true
+                    wakeWordToggleGroup.isEnabled = true
                     loadModelProgress.visibility = View.INVISIBLE
                     loadModelText.text = resources.getString(R.string.intro_text)
                 }
                 UIState.LOADING_MODEL -> {
                     loadModelLayout.visibility = View.VISIBLE
                     chatLayout.visibility = View.INVISIBLE
-                    loadModelButton.isEnabled = false
-                    loadModelButton.background = ResourcesCompat.getDrawable(resources, R.drawable.button_disabled, null)
-                    cloudModelButton.isEnabled = false
-                    cloudModelButton.background = ResourcesCompat.getDrawable(resources, R.drawable.button_disabled, null)
+                    startSessionButton.isEnabled = false
+                    startSessionButton.alpha = 0.5f
+                    intelligenceToggleGroup.isEnabled = false
+                    wakeWordToggleGroup.isEnabled = false
                     loadModelProgress.visibility = View.VISIBLE
-                    loadModelText.text = "Loading model..."
+                    loadModelText.text = "Loading Keva..."
                 }
                 UIState.WAKE_WORD -> {
                     loadModelLayout.visibility = View.INVISIBLE
@@ -721,7 +756,7 @@ class MainActivity : AppCompatActivity() {
                     loadNewModelButton.setImageDrawable(ResourcesCompat.getDrawable(resources, R.drawable.arrow_back_button, null))
                     loadNewModelButton.isEnabled = true
                     voiceStateView.setState(VoiceStateView.State.WAKE_WORD)
-                    statusText.text = "Say 'Picovoice'!"
+                    statusText.text = if (selectedWakeWordProvider == WakeWordProvider.PICOVOICE) "Say 'Picovoice'!" else "Say the wake word!"
                     if (messageAdapter.itemCount > 0) {
                         clearTextButton.isEnabled = true
                         clearTextButton.setImageDrawable(ResourcesCompat.getDrawable(resources, R.drawable.clear_button, null))
@@ -747,7 +782,8 @@ class MainActivity : AppCompatActivity() {
                     loadNewModelButton.setImageDrawable(ResourcesCompat.getDrawable(resources, R.drawable.arrow_back_button_disabled, null))
                     loadNewModelButton.isEnabled = false
                     voiceStateView.setState(VoiceStateView.State.LLM_TTS)
-                    statusText.text = "Say 'Picovoice' to interrupt"
+                    val wakeWord = if (selectedWakeWordProvider == WakeWordProvider.PICOVOICE) "'Picovoice'" else "wake word"
+                    statusText.text = "Say $wakeWord to interrupt"
                     clearTextButton.isEnabled = false
                     clearTextButton.setImageDrawable(ResourcesCompat.getDrawable(resources, R.drawable.clear_button_disabled, null))
                 }
@@ -762,20 +798,7 @@ class MainActivity : AppCompatActivity() {
         ttsSynthesizeExecutor.shutdownNow()
         ttsPlaybackExecutor.shutdownNow()
 
-        porcupine?.delete()
-        porcupine = null
-
-        cheetah?.delete()
-        cheetah = null
-
-        picollm?.delete()
-        picollm = null
-
-        orca?.delete()
-        orca = null
-
-        voiceProcessor.clearFrameListeners()
-        voiceProcessor.clearErrorListeners()
+        resetEngines()
     }
 
     companion object {

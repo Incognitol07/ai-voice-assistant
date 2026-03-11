@@ -74,29 +74,121 @@
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintBottom_toTopOf="@+id/cloudModelButton"/>
 
-        <!-- Cloud LLM option -->
-        <Button
-            android:id="@+id/cloudModelButton"
-            android:background="@drawable/button_background"
-            android:textColor="@color/textOnBubble"
-            android:text="Cloud (GitHub Model)"
-            android:textSize="16sp"
-            android:textStyle="bold"
+        <!-- Configuration Card -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/configCard"
             android:layout_width="0dp"
-            android:layout_height="52dp"
+            android:layout_height="wrap_content"
             android:layout_marginStart="24dp"
             android:layout_marginEnd="24dp"
-            android:layout_marginBottom="12dp"
+            android:layout_marginBottom="24dp"
+            app:cardBackgroundColor="@color/colorSurface"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="0dp"
+            app:strokeWidth="1dp"
+            app:strokeColor="@color/colorDivider"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintBottom_toTopOf="@+id/loadModelButton"/>
+            app:layout_constraintBottom_toTopOf="@+id/startSessionButton">
 
-        <!-- On-device .pllm option anchored to the bottom -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="20dp">
+
+                <!-- Intelligence Selection -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Intelligence"
+                    android:textColor="@color/textSecondary"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:textAllCaps="true"
+                    android:letterSpacing="0.05"/>
+
+                <com.google.android.material.button.MaterialButtonToggleGroup
+                    android:id="@+id/intelligenceToggleGroup"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    app:singleSelection="true"
+                    app:selectionRequired="true"
+                    app:checkedButton="@+id/cloudButton">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/cloudButton"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Cloud"
+                        android:textSize="13sp"
+                        app:strokeColor="@color/colorDivider" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/onDeviceButton"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="On-Device"
+                        android:textSize="13sp"
+                        app:strokeColor="@color/colorDivider" />
+                </com.google.android.material.button.MaterialButtonToggleGroup>
+
+                <!-- Wake Word Selection -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:text="Wake Word"
+                    android:textColor="@color/textSecondary"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:textAllCaps="true"
+                    android:letterSpacing="0.05"/>
+
+                <com.google.android.material.button.MaterialButtonToggleGroup
+                    android:id="@+id/wakeWordToggleGroup"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    app:singleSelection="true"
+                    app:selectionRequired="true"
+                    app:checkedButton="@+id/picovoiceButton">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/picovoiceButton"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Picovoice"
+                        android:textSize="13sp"
+                        app:strokeColor="@color/colorDivider" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/openWakeWordButton"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="openWakeWord"
+                        android:textSize="13sp"
+                        app:strokeColor="@color/colorDivider" />
+                </com.google.android.material.button.MaterialButtonToggleGroup>
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Dynamic Start Button -->
         <Button
-            android:id="@+id/loadModelButton"
+            android:id="@+id/startSessionButton"
             android:background="@drawable/button_background"
             android:textColor="@color/textOnBubble"
-            android:text="On-Device (.pllm)"
+            android:text="Initialize Keva"
             android:textSize="16sp"
             android:textStyle="bold"
             android:layout_width="0dp"

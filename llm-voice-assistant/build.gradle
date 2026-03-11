@@ -34,7 +34,7 @@ android {
         buildConfigField "String", "GITHUB_TOKEN", "\"${properties.getProperty('GITHUB_TOKEN', '')}\""
     }
     buildFeatures {
-        buildConfig true
+        buildConfig = true
     }
     signingConfigs {
         release {
@@ -84,6 +84,9 @@ android {
         }
     }
     namespace 'ai.picovoice.llmvoiceassistant'
+    androidResources {
+        noCompress "onnx"
+    }
 }
 
 dependencies {
@@ -104,4 +107,5 @@ dependencies {
     implementation 'com.azure:azure-ai-inference:1.0.0-beta.1'
     implementation 'ai.picovoice:orca-android:2.0.0'
     implementation 'ai.picovoice:picollm-android:2.0.0'
+    implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.17.1'
 }
