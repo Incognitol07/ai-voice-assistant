@@ -6,9 +6,14 @@ interface WakeWordEngine {
     /**
      * Initializes and starts the wake word engine.
      * @param context The Android Context.
+     * @param onError Callback invoked if initialization fails.
      * @param onWakeWordDetected Callback invoked when the wake word is detected. The keywordIndex is passed (0 for primary wake word).
      */
-    fun start(context: Context, onWakeWordDetected: (keywordIndex: Int) -> Unit)
+    fun start(
+        context: Context,
+        onError: (String) -> Unit,
+        onWakeWordDetected: (keywordIndex: Int) -> Unit
+    )
 
     /**
      * Processes a single frame of audio data (typically 512 samples at 16kHz).
@@ -21,3 +26,4 @@ interface WakeWordEngine {
      */
     fun stop()
 }
+

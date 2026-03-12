@@ -38,13 +38,25 @@ import ai.picovoice.android.voiceprocessor.VoiceProcessor
 import ai.picovoice.android.voiceprocessor.VoiceProcessorException
 import ai.picovoice.cheetah.Cheetah
 import ai.picovoice.cheetah.CheetahException
+import ai.picovoice.cheetah.CheetahActivationRefusedException
+import ai.picovoice.cheetah.CheetahActivationLimitException
+import ai.picovoice.cheetah.CheetahActivationThrottledException
+import ai.picovoice.cheetah.CheetahActivationException
 import ai.picovoice.orca.Orca
 import ai.picovoice.orca.OrcaException
+import ai.picovoice.orca.OrcaActivationRefusedException
+import ai.picovoice.orca.OrcaActivationLimitException
+import ai.picovoice.orca.OrcaActivationThrottledException
+import ai.picovoice.orca.OrcaActivationException
 import ai.picovoice.orca.OrcaSynthesizeParams
 import ai.picovoice.picollm.PicoLLM
 import ai.picovoice.picollm.PicoLLMCompletion
 import ai.picovoice.picollm.PicoLLMDialog
 import ai.picovoice.picollm.PicoLLMException
+import ai.picovoice.picollm.PicoLLMActivationRefusedException
+import ai.picovoice.picollm.PicoLLMActivationLimitException
+import ai.picovoice.picollm.PicoLLMActivationThrottledException
+import ai.picovoice.picollm.PicoLLMActivationException
 import ai.picovoice.picollm.PicoLLMGenerateParams
 import com.azure.ai.inference.ChatCompletionsClient
 import com.azure.ai.inference.ChatCompletionsClientBuilder
@@ -57,6 +69,8 @@ import com.azure.core.credential.AccessToken
 import com.azure.core.util.CoreUtils
 
 class MainActivity : AppCompatActivity() {
+    private val TAG = "MainActivity"
+
 
     private enum class UIState {
         INIT, LOADING_MODEL, WAKE_WORD, STT, LLM_TTS
@@ -98,6 +112,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var flushPendingTokens: java.lang.Runnable
 
     private var ttsOutput: AudioTrack? = null
+
+    @Volatile
     private var currentState = UIState.INIT
     private var llmPromptText = java.lang.StringBuilder()
 
@@ -235,18 +251,28 @@ class MainActivity : AppCompatActivity() {
 
     private fun initEnginesCloud() {
         resetEngines()
+        Log.i("MainActivity", "Initializing Cloud engines. Provider: $selectedWakeWordProvider")
         
         mainHandler.post { loadModelText.text = "Loading Wake Word Engine..." }
-        wakeWordEngine = when (selectedWakeWordProvider) {
-            WakeWordProvider.PICOVOICE -> PicovoiceWakeWordEngine(ACCESS_KEY)
-            WakeWordProvider.OPENWAKEWORD -> OpenWakeWordEngine()
-        }
-        wakeWordEngine?.start(applicationContext) { keywordIndex ->
-            if (keywordIndex == 0) {
-                interrupt()
-                llmPromptText = java.lang.StringBuilder()
-                updateUIState(UIState.STT)
+        try {
+            wakeWordEngine = when (selectedWakeWordProvider) {
+                WakeWordProvider.PICOVOICE -> PicovoiceWakeWordEngine(ACCESS_KEY)
+                WakeWordProvider.OPENWAKEWORD -> OpenWakeWordEngine()
             }
+            wakeWordEngine?.start(applicationContext, { error ->
+                Log.e(TAG, "Wake word engine error: $error")
+                onEngineInitError("Wake word engine failed to start: $error")
+            }) { keywordIndex ->
+                if (keywordIndex == 0) {
+                    interrupt()
+                    llmPromptText = java.lang.StringBuilder()
+                    updateUIState(UIState.STT)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to initialize wake word engine", e)
+            onEngineInitError("Wake word init failed: ${e.message}")
+            return
         }
 
         mainHandler.post { loadModelText.text = "Loading Cheetah..." }
@@ -256,17 +282,38 @@ class MainActivity : AppCompatActivity() {
                 .setModelPath(STT_MODEL_FILE)
                 .setEnableAutomaticPunctuation(true)
                 .build(applicationContext)
+            Log.i(TAG, "Cheetah initialized successfully")
+        } catch (e: CheetahActivationRefusedException) {
+            onEngineInitError("Cheetah activation refused. Check your AccessKey.")
+            return
+        } catch (e: CheetahActivationLimitException) {
+            onEngineInitError("Cheetah activation limit reached.")
+            return
+        } catch (e: CheetahActivationThrottledException) {
+            onEngineInitError("Cheetah activation throttled.")
+            return
+        } catch (e: CheetahActivationException) {
+            onEngineInitError("Cheetah activation error: ${e.message}")
+            return
         } catch (e: CheetahException) {
+            Log.e(TAG, "Failed to initialize Cheetah", e)
             onEngineInitError(e.message)
             return
         }
 
         if (chatClient == null) {
             mainHandler.post { loadModelText.text = "Initializing cloud LLM client..." }
-            chatClient = ChatCompletionsClientBuilder()
-                .credential(bearerCredential)
-                .endpoint(OPENAI_ENDPOINT)
-                .buildClient()
+            try {
+                chatClient = ChatCompletionsClientBuilder()
+                    .credential(bearerCredential)
+                    .endpoint(OPENAI_ENDPOINT)
+                    .buildClient()
+                Log.i(TAG, "Cloud LLM client initialized")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to initialize cloud LLM client", e)
+                onEngineInitError("Cloud LLM client init failed: ${e.message}")
+                return
+            }
         }
         conversationHistory.clear()
         conversationHistory.add(ChatRequestSystemMessage(SYSTEM_PROMPT))
@@ -277,31 +324,59 @@ class MainActivity : AppCompatActivity() {
                 .setAccessKey(ACCESS_KEY)
                 .setModelPath(TTS_MODEL_FILE)
                 .build(applicationContext)
+            Log.i(TAG, "Orca initialized successfully")
+        } catch (e: OrcaActivationRefusedException) {
+            onEngineInitError("Orca activation refused. Check your AccessKey.")
+            return
+        } catch (e: OrcaActivationLimitException) {
+            onEngineInitError("Orca activation limit reached.")
+            return
+        } catch (e: OrcaActivationThrottledException) {
+            onEngineInitError("Orca activation throttled.")
+            return
+        } catch (e: OrcaActivationException) {
+            onEngineInitError("Orca activation error: ${e.message}")
+            return
         } catch (e: OrcaException) {
+            Log.e(TAG, "Failed to initialize Orca", e)
             onEngineInitError(e.message)
             return
         }
 
+        Log.i(TAG, "All engines initialized successfully")
         updateUIState(UIState.WAKE_WORD)
         voiceProcessor.addFrameListener { runWakeWordSTT(it) }
-        voiceProcessor.addErrorListener { error -> onEngineProcessError(error.message) }
+        voiceProcessor.addErrorListener { error -> 
+            Log.e(TAG, "VoiceProcessor error", error)
+            onEngineProcessError(error.message) 
+        }
         startWakeWordListening()
     }
 
     private fun initEnginesOnDevice(modelFile: File) {
         resetEngines()
+        Log.i("MainActivity", "Initializing On-Device engines. Provider: $selectedWakeWordProvider")
         
         mainHandler.post { loadModelText.text = "Loading Wake Word Engine..." }
-        wakeWordEngine = when (selectedWakeWordProvider) {
-            WakeWordProvider.PICOVOICE -> PicovoiceWakeWordEngine(ACCESS_KEY)
-            WakeWordProvider.OPENWAKEWORD -> OpenWakeWordEngine()
-        }
-        wakeWordEngine?.start(applicationContext) { keywordIndex ->
-            if (keywordIndex == 0) {
-                interrupt()
-                llmPromptText = java.lang.StringBuilder()
-                updateUIState(UIState.STT)
+        try {
+            wakeWordEngine = when (selectedWakeWordProvider) {
+                WakeWordProvider.PICOVOICE -> PicovoiceWakeWordEngine(ACCESS_KEY)
+                WakeWordProvider.OPENWAKEWORD -> OpenWakeWordEngine()
             }
+            wakeWordEngine?.start(applicationContext, { error ->
+                Log.e(TAG, "Wake word engine error: $error")
+                onEngineInitError("Wake word engine failed to start: $error")
+            }) { keywordIndex ->
+                if (keywordIndex == 0) {
+                    interrupt()
+                    llmPromptText = java.lang.StringBuilder()
+                    updateUIState(UIState.STT)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to initialize wake word engine", e)
+            onEngineInitError("Wake word init failed: ${e.message}")
+            return
         }
 
         mainHandler.post { loadModelText.text = "Loading Cheetah..." }
@@ -311,7 +386,9 @@ class MainActivity : AppCompatActivity() {
                 .setModelPath(STT_MODEL_FILE)
                 .setEnableAutomaticPunctuation(true)
                 .build(applicationContext)
+            Log.i(TAG, "Cheetah initialized successfully")
         } catch (e: CheetahException) {
+            Log.e(TAG, "Failed to initialize Cheetah", e)
             onEngineInitError(e.message)
             return
         }
@@ -323,7 +400,21 @@ class MainActivity : AppCompatActivity() {
                 .setModelPath(modelFile.absolutePath)
                 .build()
             dialog = picollm?.dialogBuilder?.setSystem(SYSTEM_PROMPT)?.build()
+            Log.i(TAG, "picoLLM initialized successfully with model: ${modelFile.name}")
+        } catch (e: PicoLLMActivationRefusedException) {
+            onEngineInitError("picoLLM activation refused. Check your AccessKey.")
+            return
+        } catch (e: PicoLLMActivationLimitException) {
+            onEngineInitError("picoLLM activation limit reached.")
+            return
+        } catch (e: PicoLLMActivationThrottledException) {
+            onEngineInitError("picoLLM activation throttled.")
+            return
+        } catch (e: PicoLLMActivationException) {
+            onEngineInitError("picoLLM activation error: ${e.message}")
+            return
         } catch (e: PicoLLMException) {
+            Log.e(TAG, "Failed to initialize picoLLM", e)
             onEngineInitError(e.message)
             return
         }
@@ -334,14 +425,20 @@ class MainActivity : AppCompatActivity() {
                 .setAccessKey(ACCESS_KEY)
                 .setModelPath(TTS_MODEL_FILE)
                 .build(applicationContext)
+            Log.i(TAG, "Orca initialized successfully")
         } catch (e: OrcaException) {
+            Log.e(TAG, "Failed to initialize Orca", e)
             onEngineInitError(e.message)
             return
         }
 
+        Log.i(TAG, "All engines initialized successfully")
         updateUIState(UIState.WAKE_WORD)
         voiceProcessor.addFrameListener { runWakeWordSTT(it) }
-        voiceProcessor.addErrorListener { error -> onEngineProcessError(error.message) }
+        voiceProcessor.addErrorListener { error -> 
+            Log.e(TAG, "VoiceProcessor error", error)
+            onEngineProcessError(error.message) 
+        }
         startWakeWordListening()
     }
 
@@ -367,6 +464,7 @@ class MainActivity : AppCompatActivity() {
                     runLLM(llmPromptText.toString())
                 }
             } catch (e: CheetahException) {
+                Log.e(TAG, "Cheetah processing error", e)
                 onEngineProcessError(e.message)
             }
         }
@@ -384,6 +482,7 @@ class MainActivity : AppCompatActivity() {
         val pcmQueue = ConcurrentLinkedQueue<ShortArray>()
 
         updateUIState(UIState.LLM_TTS)
+        Log.i("MainActivity", "Starting LLM processing for prompt: $prompt")
         mainHandler.post { messageAdapter.addMessage(Message(Message.Role.ASSISTANT, "")) }
 
         if (selectedMode == Mode.ON_DEVICE) {
@@ -686,11 +785,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onEngineInitError(message: String?) {
+        Log.e(TAG, "Engine init error: $message")
         updateUIState(UIState.INIT)
         mainHandler.post { loadModelText.text = message }
     }
 
     private fun onEngineProcessError(message: String?) {
+        Log.e(TAG, "Engine process error: $message")
         updateUIState(UIState.WAKE_WORD)
         mainHandler.post { messageAdapter.addMessage(Message(Message.Role.ASSISTANT, message ?: "")) }
     }
@@ -705,7 +806,11 @@ class MainActivity : AppCompatActivity() {
     private fun startWakeWordListening() {
         if (voiceProcessor.hasRecordAudioPermission(this)) {
             try {
-                cheetah?.let { voiceProcessor.start(it.frameLength, it.sampleRate) }
+                // Ensure sample rate is always 16kHz for wake word engines
+                val sampleRate = 16000
+                val frameLength = cheetah?.frameLength ?: 512
+                Log.i("MainActivity", "Starting VoiceProcessor: length=$frameLength, rate=$sampleRate")
+                voiceProcessor.start(frameLength, sampleRate)
             } catch (e: VoiceProcessorException) {
                 onEngineProcessError(e.message)
             }
@@ -728,6 +833,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateUIState(state: UIState) {
+        currentState = state
         mainHandler.post {
             when (state) {
                 UIState.INIT -> {
@@ -788,7 +894,6 @@ class MainActivity : AppCompatActivity() {
                     clearTextButton.setImageDrawable(ResourcesCompat.getDrawable(resources, R.drawable.clear_button_disabled, null))
                 }
             }
-            currentState = state
         }
     }
 
